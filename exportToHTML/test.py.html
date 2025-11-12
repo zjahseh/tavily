@@ -1,0 +1,253 @@
+<html>
+<head>
+<title>test.py</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #7a7e85;}
+.s1 { color: #bcbec4;}
+.s2 { color: #cf8e6d;}
+.s3 { color: #bcbec4;}
+.s4 { color: #6aab73;}
+.s5 { color: #2aacb8;}
+.s6 { color: #5f826b; font-style: italic;}
+</style>
+</head>
+<body bgcolor="#1e1f22">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#606060" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+test.py</font>
+</center></td></tr></table>
+<pre><span class="s0"># 📦 自動新聞整合系統 v1.0</span>
+<span class="s0"># 功能：整合 Tavily 搜尋 + Gemini 摘要 → 生成台灣每日新聞綜合報告</span>
+<span class="s0"># 🌟 修正：將 Google Trends 替換為 Google News RSS，並增加 RSS 備援機制。</span>
+
+<span class="s2">import </span><span class="s1">os</span>
+<span class="s2">from </span><span class="s1">dotenv </span><span class="s2">import </span><span class="s1">load_dotenv</span>
+<span class="s2">from </span><span class="s1">tavily </span><span class="s2">import </span><span class="s1">TavilyClient</span>
+<span class="s2">import </span><span class="s1">google</span><span class="s3">.</span><span class="s1">generativeai </span><span class="s2">as </span><span class="s1">genai</span>
+<span class="s0"># import pytrends.request as TrendReq # 不再需要 pytrends</span>
+<span class="s2">import </span><span class="s1">feedparser</span>
+<span class="s2">import </span><span class="s1">pandas </span><span class="s2">as </span><span class="s1">pd</span>
+<span class="s2">import </span><span class="s1">time</span>
+<span class="s2">from </span><span class="s1">google</span><span class="s3">.</span><span class="s1">generativeai </span><span class="s2">import </span><span class="s1">types</span>
+
+<span class="s0"># ...</span>
+<span class="s0"># ==========================</span>
+<span class="s0"># 初始化環境變數</span>
+<span class="s0"># ==========================</span>
+<span class="s1">load_dotenv</span><span class="s3">()</span>
+<span class="s1">TAVILY_API_KEY </span><span class="s3">= </span><span class="s1">os</span><span class="s3">.</span><span class="s1">getenv</span><span class="s3">(</span><span class="s4">&quot;TAVILY_API_KEY&quot;</span><span class="s3">)</span>
+<span class="s1">GOOGLE_API_KEY </span><span class="s3">= </span><span class="s1">os</span><span class="s3">.</span><span class="s1">getenv</span><span class="s3">(</span><span class="s4">&quot;GOOGLE_API_KEY&quot;</span><span class="s3">)</span>
+
+<span class="s2">if not </span><span class="s1">TAVILY_API_KEY </span><span class="s2">or not </span><span class="s1">GOOGLE_API_KEY</span><span class="s3">:</span>
+    <span class="s0"># 這裡的錯誤檢查是必要的，請確保您的 .env 文件中設定了這兩個 Key</span>
+    <span class="s2">raise </span><span class="s1">ValueError</span><span class="s3">(</span><span class="s4">&quot;❌ 請確認已在 .env 檔中設定 TAVILY_API_KEY 和 GOOGLE_API_KEY&quot;</span><span class="s3">)</span>
+
+<span class="s0"># 初始化客戶端</span>
+<span class="s1">tavily_client </span><span class="s3">= </span><span class="s1">TavilyClient</span><span class="s3">(</span><span class="s1">api_key</span><span class="s3">=</span><span class="s1">TAVILY_API_KEY</span><span class="s3">)</span>
+<span class="s1">genai</span><span class="s3">.</span><span class="s1">configure</span><span class="s3">(</span><span class="s1">api_key</span><span class="s3">=</span><span class="s1">GOOGLE_API_KEY</span><span class="s3">)</span>
+<span class="s1">gemini_model </span><span class="s3">= </span><span class="s1">genai</span><span class="s3">.</span><span class="s1">GenerativeModel</span><span class="s3">(</span><span class="s4">&quot;models/gemini-2.5-flash&quot;</span><span class="s3">)</span>
+
+
+<span class="s0"># ==========================</span>
+<span class="s0"># Phase 1：探索事件</span>
+<span class="s0"># ==========================</span>
+<span class="s0"># ==========================</span>
+<span class="s0"># Phase 0：Google News 台灣頭條 RSS 提取 (多重備援版)</span>
+<span class="s0"># ==========================</span>
+<span class="s2">def </span><span class="s1">get_google_news_headlines</span><span class="s3">(</span><span class="s1">max_results</span><span class="s3">=</span><span class="s5">15</span><span class="s3">):</span>
+    <span class="s6">&quot;&quot;&quot; 
+    使用 Google News 台灣地區的 RSS Feed 獲取頭條新聞標題，失敗時嘗試通用版。 
+    &quot;&quot;&quot;</span>
+    <span class="s1">print</span><span class="s3">(</span><span class="s4">&quot;📰 [Phase 0] 透過 Google News 台灣 RSS Feed 獲取最新頭條...&quot;</span><span class="s3">)</span>
+
+    <span class="s0"># 1. 台灣特定 RSS URL (優先嘗試)</span>
+    <span class="s1">TW_RSS_URL </span><span class="s3">= </span><span class="s4">&quot;https://news.google.com/rss?hl=zh-TW&amp;gl=TW&amp;ceid=TW:zh-Hant&quot;</span>
+    <span class="s0"># 2. 通用/國際 RSS URL (作為備援)</span>
+    <span class="s1">GLOBAL_RSS_URL </span><span class="s3">= </span><span class="s4">&quot;https://news.google.com/rss&quot;</span>
+
+    <span class="s1">urls_to_try </span><span class="s3">= [</span><span class="s1">TW_RSS_URL</span><span class="s3">, </span><span class="s1">GLOBAL_RSS_URL</span><span class="s3">]</span>
+
+    <span class="s2">for </span><span class="s1">i</span><span class="s3">, </span><span class="s1">url </span><span class="s2">in </span><span class="s1">enumerate</span><span class="s3">(</span><span class="s1">urls_to_try</span><span class="s3">):</span>
+        <span class="s1">source_name </span><span class="s3">= </span><span class="s4">&quot;台灣專屬 RSS&quot; </span><span class="s2">if </span><span class="s1">i </span><span class="s3">== </span><span class="s5">0 </span><span class="s2">else </span><span class="s4">&quot;通用 RSS 備援&quot;</span>
+
+        <span class="s2">try</span><span class="s3">:</span>
+            <span class="s1">feed </span><span class="s3">= </span><span class="s1">feedparser</span><span class="s3">.</span><span class="s1">parse</span><span class="s3">(</span><span class="s1">url</span><span class="s3">)</span>
+            <span class="s1">headlines </span><span class="s3">= []</span>
+
+            <span class="s2">for </span><span class="s1">entry </span><span class="s2">in </span><span class="s1">feed</span><span class="s3">.</span><span class="s1">entries</span><span class="s3">:</span>
+                <span class="s0"># RSS feed 的標題 (entry.title) 就是新聞標題</span>
+                <span class="s1">title </span><span class="s3">= </span><span class="s1">entry</span><span class="s3">.</span><span class="s1">title</span>
+                <span class="s1">headlines</span><span class="s3">.</span><span class="s1">append</span><span class="s3">(</span><span class="s1">title</span><span class="s3">)</span>
+
+                <span class="s2">if </span><span class="s1">len</span><span class="s3">(</span><span class="s1">headlines</span><span class="s3">) &gt;= </span><span class="s1">max_results</span><span class="s3">:</span>
+                    <span class="s2">break</span>
+
+            <span class="s2">if </span><span class="s1">headlines</span><span class="s3">:</span>
+                <span class="s1">print</span><span class="s3">(</span><span class="s4">f&quot;✅ 成功獲取 </span><span class="s2">{</span><span class="s1">len</span><span class="s3">(</span><span class="s1">headlines</span><span class="s3">)</span><span class="s2">} </span><span class="s4">個 Google News 頭條 (來源: </span><span class="s2">{</span><span class="s1">source_name</span><span class="s2">}</span><span class="s4">)。&quot;</span><span class="s3">)</span>
+                <span class="s2">return </span><span class="s1">headlines</span>
+
+            <span class="s1">print</span><span class="s3">(</span><span class="s4">f&quot;⚠️ </span><span class="s2">{</span><span class="s1">source_name</span><span class="s2">} </span><span class="s4">內容為空。嘗試下一個備援。&quot;</span><span class="s3">)</span>
+        <span class="s2">except </span><span class="s1">Exception </span><span class="s2">as </span><span class="s1">e</span><span class="s3">:</span>
+            <span class="s1">print</span><span class="s3">(</span><span class="s4">f&quot;❌ 獲取 </span><span class="s2">{</span><span class="s1">source_name</span><span class="s2">} </span><span class="s4">數據時發生錯誤: </span><span class="s2">{</span><span class="s1">e</span><span class="s2">}</span><span class="s4">。嘗試下一個備援。&quot;</span><span class="s3">)</span>
+
+    <span class="s0"># 如果所有 RSS 都失敗，執行靜態備援</span>
+    <span class="s1">print</span><span class="s3">(</span><span class="s4">&quot;❌ 所有 RSS 來源均失敗。將使用靜態備援查詢。&quot;</span><span class="s3">)</span>
+    <span class="s2">return </span><span class="s3">[]</span>
+
+
+<span class="s0"># ==========================</span>
+<span class="s0"># Phase 1：探索事件 (使用 Google News 標題)</span>
+<span class="s0"># ==========================</span>
+<span class="s2">def </span><span class="s1">get_main_events</span><span class="s3">(</span><span class="s1">query</span><span class="s3">=</span><span class="s4">&quot;今日新聞&quot;</span><span class="s3">):</span>
+    <span class="s0"># 🌟 步驟 1: 呼叫新的函式獲取 Google News 標題 (內建備援)</span>
+    <span class="s1">news_titles </span><span class="s3">= </span><span class="s1">get_google_news_headlines</span><span class="s3">(</span><span class="s1">max_results</span><span class="s3">=</span><span class="s5">15</span><span class="s3">)</span>
+
+    <span class="s0"># 🌟 步驟 2: 定義備援查詢列表 (以防 RSS 抓取失敗)</span>
+    <span class="s0"># 由於 news_titles 函數內部已經處理了多重 RSS 備援，這裡只需處理最終失敗的情況</span>
+    <span class="s2">if </span><span class="s1">news_titles</span><span class="s3">:</span>
+        <span class="s1">sub_queries </span><span class="s3">= </span><span class="s1">news_titles</span>
+        <span class="s1">print</span><span class="s3">(</span><span class="s4">f&quot;🔍 [Phase 1] 搜尋 (使用 </span><span class="s2">{</span><span class="s1">len</span><span class="s3">(</span><span class="s1">news_titles</span><span class="s3">)</span><span class="s2">} </span><span class="s4">個 Google News 標題) 中...&quot;</span><span class="s3">)</span>
+    <span class="s2">else</span><span class="s3">:</span>
+        <span class="s0"># 最終靜態備援查詢</span>
+        <span class="s1">sub_queries </span><span class="s3">= [</span>
+            <span class="s4">&quot;台灣今日熱門新聞&quot;</span><span class="s3">, </span><span class="s4">&quot;台灣重大政策&quot;</span><span class="s3">, </span><span class="s4">&quot;台灣娛樂頭條&quot;</span><span class="s3">, </span><span class="s4">&quot;台灣社會新聞&quot;</span><span class="s3">, </span><span class="s4">&quot;國際情勢對台灣影響&quot;</span>
+        <span class="s3">]</span>
+        <span class="s1">print</span><span class="s3">(</span><span class="s4">f&quot;🔍 [Phase 1] 搜尋 (使用靜態備援詞彙) 中...&quot;</span><span class="s3">)</span>
+
+    <span class="s1">all_articles </span><span class="s3">= []</span>
+
+    <span class="s0"># 使用 Tavily 搜尋步驟不變</span>
+    <span class="s2">for </span><span class="s1">sub_query </span><span class="s2">in </span><span class="s1">sub_queries</span><span class="s3">:</span>
+        <span class="s2">try</span><span class="s3">:</span>
+            <span class="s0"># 針對每個子查詢獲取最大值 (15) 的結果</span>
+            <span class="s1">response </span><span class="s3">= </span><span class="s1">tavily_client</span><span class="s3">.</span><span class="s1">search</span><span class="s3">(</span>
+                <span class="s1">query</span><span class="s3">=</span><span class="s1">sub_query</span><span class="s3">,</span>
+                <span class="s1">max_results</span><span class="s3">=</span><span class="s5">15</span><span class="s3">,</span>
+                <span class="s1">include_raw_content</span><span class="s3">=</span><span class="s2">True</span><span class="s3">,</span>
+                <span class="s1">time_range</span><span class="s3">=</span><span class="s4">&quot;day&quot;</span>
+            <span class="s3">)</span>
+            <span class="s1">all_articles</span><span class="s3">.</span><span class="s1">extend</span><span class="s3">(</span><span class="s1">response</span><span class="s3">[</span><span class="s4">&quot;results&quot;</span><span class="s3">])</span>
+        <span class="s2">except </span><span class="s1">Exception </span><span class="s2">as </span><span class="s1">e</span><span class="s3">:</span>
+            <span class="s1">print</span><span class="s3">(</span><span class="s4">f&quot;⚠️ 子查詢失敗 (</span><span class="s2">{</span><span class="s1">sub_query</span><span class="s2">}</span><span class="s4">)：</span><span class="s2">{</span><span class="s1">e</span><span class="s2">}</span><span class="s4">&quot;</span><span class="s3">)</span>
+
+    <span class="s0"># ... (以下建立 context 和呼叫 Gemini 的程式碼保持不變) ...</span>
+    <span class="s1">context </span><span class="s3">= </span><span class="s4">&quot;&quot;</span>
+    <span class="s2">for </span><span class="s1">a </span><span class="s2">in </span><span class="s1">all_articles</span><span class="s3">:</span>
+        <span class="s1">raw_content </span><span class="s3">= </span><span class="s1">a</span><span class="s3">.</span><span class="s1">get</span><span class="s3">(</span><span class="s4">'raw_content'</span><span class="s3">) </span><span class="s2">or </span><span class="s4">''</span>
+        <span class="s1">context </span><span class="s3">+= </span><span class="s4">f&quot;來源: </span><span class="s2">{</span><span class="s1">a</span><span class="s3">.</span><span class="s1">get</span><span class="s3">(</span><span class="s4">'url'</span><span class="s3">, </span><span class="s4">'無'</span><span class="s3">)</span><span class="s2">}\n</span><span class="s4">標題: </span><span class="s2">{</span><span class="s1">a</span><span class="s3">.</span><span class="s1">get</span><span class="s3">(</span><span class="s4">'title'</span><span class="s3">, </span><span class="s4">'無'</span><span class="s3">)</span><span class="s2">}\n</span><span class="s4">內容: </span><span class="s2">{</span><span class="s1">raw_content</span><span class="s3">[:</span><span class="s5">1000</span><span class="s3">]</span><span class="s2">}\n\n</span><span class="s4">---</span><span class="s2">\n\n</span><span class="s4">&quot;</span>
+
+    <span class="s1">prompt </span><span class="s3">= </span><span class="s4">f&quot;&quot;&quot;</span>
+    <span class="s4">你是一位專業新聞編輯。</span>
+    <span class="s4">根據所有新聞，請幫我提煉出 3–5 個「熱門事件」，</span>
+    <span class="s4">每個主題以一句簡短文字表示。</span>
+    <span class="s4">--- 開始新聞資料 ---</span>
+    <span class="s2">{</span><span class="s1">context</span><span class="s2">}</span>
+    <span class="s4">--- 結束新聞資料 ---</span>
+    <span class="s4">&quot;&quot;&quot;</span>
+    <span class="s1">response </span><span class="s3">= </span><span class="s1">gemini_model</span><span class="s3">.</span><span class="s1">generate_content</span><span class="s3">(</span><span class="s1">prompt</span><span class="s3">)</span>
+    <span class="s1">print</span><span class="s3">(</span><span class="s4">&quot;✅ 主題提取完成</span><span class="s2">\n</span><span class="s4">&quot;</span><span class="s3">)</span>
+    <span class="s2">return </span><span class="s3">[</span><span class="s1">e</span><span class="s3">.</span><span class="s1">strip</span><span class="s3">(</span><span class="s4">&quot;•&quot;</span><span class="s3">).</span><span class="s1">strip</span><span class="s3">() </span><span class="s2">for </span><span class="s1">e </span><span class="s2">in </span><span class="s1">response</span><span class="s3">.</span><span class="s1">text</span><span class="s3">.</span><span class="s1">split</span><span class="s3">(</span><span class="s4">&quot;</span><span class="s2">\n</span><span class="s4">&quot;</span><span class="s3">) </span><span class="s2">if </span><span class="s1">e</span><span class="s3">.</span><span class="s1">strip</span><span class="s3">()]</span>
+
+
+<span class="s0"># ==========================</span>
+<span class="s0"># Phase 2：抓取內容</span>
+<span class="s0"># ==========================</span>
+<span class="s0"># ==========================</span>
+<span class="s0"># Phase 2：抓取內容 (保持不變)</span>
+<span class="s0"># ==========================</span>
+<span class="s2">def </span><span class="s1">get_event_articles</span><span class="s3">(</span><span class="s1">event</span><span class="s3">):</span>
+    <span class="s1">print</span><span class="s3">(</span><span class="s4">f&quot;📰 [Phase 2] 深度搜尋：</span><span class="s2">{</span><span class="s1">event</span><span class="s2">}</span><span class="s4">&quot;</span><span class="s3">)</span>
+    <span class="s1">all_articles </span><span class="s3">= []</span>
+
+    <span class="s0"># 進行一次廣泛搜尋</span>
+    <span class="s1">query </span><span class="s3">= </span><span class="s1">event</span>
+    <span class="s2">try</span><span class="s3">:</span>
+        <span class="s0"># 增加 max_results 以獲取更多資料</span>
+        <span class="s1">res </span><span class="s3">= </span><span class="s1">tavily_client</span><span class="s3">.</span><span class="s1">search</span><span class="s3">(</span><span class="s1">query</span><span class="s3">=</span><span class="s1">query</span><span class="s3">, </span><span class="s1">max_results</span><span class="s3">=</span><span class="s5">15</span><span class="s3">, </span><span class="s1">include_raw_content</span><span class="s3">=</span><span class="s2">True</span><span class="s3">, </span><span class="s1">time_range</span><span class="s3">=</span><span class="s4">&quot;day&quot;</span><span class="s3">)</span>
+
+        <span class="s2">for </span><span class="s1">r </span><span class="s2">in </span><span class="s1">res</span><span class="s3">[</span><span class="s4">&quot;results&quot;</span><span class="s3">]:</span>
+            <span class="s1">raw_content </span><span class="s3">= </span><span class="s1">r</span><span class="s3">.</span><span class="s1">get</span><span class="s3">(</span><span class="s4">&quot;raw_content&quot;</span><span class="s3">) </span><span class="s2">or </span><span class="s4">&quot;&quot;</span>
+
+            <span class="s0"># 從 URL 解析來源 (更美觀的顯示)</span>
+            <span class="s1">url_parts </span><span class="s3">= </span><span class="s1">r</span><span class="s3">.</span><span class="s1">get</span><span class="s3">(</span><span class="s4">&quot;url&quot;</span><span class="s3">, </span><span class="s4">&quot;無網址&quot;</span><span class="s3">).</span><span class="s1">split</span><span class="s3">(</span><span class="s4">&quot;/&quot;</span><span class="s3">)</span>
+            <span class="s1">source </span><span class="s3">= </span><span class="s1">url_parts</span><span class="s3">[</span><span class="s5">2</span><span class="s3">] </span><span class="s2">if </span><span class="s1">len</span><span class="s3">(</span><span class="s1">url_parts</span><span class="s3">) &gt; </span><span class="s5">2 </span><span class="s2">else </span><span class="s4">&quot;未知來源&quot;</span>
+
+            <span class="s0"># 確保內容不為空才加入，提高摘要品質</span>
+            <span class="s2">if </span><span class="s1">raw_content</span><span class="s3">:</span>
+                <span class="s1">all_articles</span><span class="s3">.</span><span class="s1">append</span><span class="s3">({</span>
+                    <span class="s4">&quot;source&quot;</span><span class="s3">: </span><span class="s1">source</span><span class="s3">,</span>
+                    <span class="s4">&quot;title&quot;</span><span class="s3">: </span><span class="s1">r</span><span class="s3">.</span><span class="s1">get</span><span class="s3">(</span><span class="s4">&quot;title&quot;</span><span class="s3">, </span><span class="s4">&quot;無標題&quot;</span><span class="s3">),</span>
+                    <span class="s4">&quot;url&quot;</span><span class="s3">: </span><span class="s1">r</span><span class="s3">.</span><span class="s1">get</span><span class="s3">(</span><span class="s4">&quot;url&quot;</span><span class="s3">, </span><span class="s4">&quot;無網址&quot;</span><span class="s3">),</span>
+                    <span class="s4">&quot;content&quot;</span><span class="s3">: </span><span class="s1">raw_content</span>
+                <span class="s3">})</span>
+
+        <span class="s2">return </span><span class="s1">all_articles</span>
+
+    <span class="s2">except </span><span class="s1">Exception </span><span class="s2">as </span><span class="s1">e</span><span class="s3">:</span>
+        <span class="s1">print</span><span class="s3">(</span><span class="s4">f&quot;⚠️ 無法取得 </span><span class="s2">{</span><span class="s1">event</span><span class="s2">} </span><span class="s4">的深度搜尋內容：</span><span class="s2">{</span><span class="s1">e</span><span class="s2">}</span><span class="s4">&quot;</span><span class="s3">)</span>
+        <span class="s2">return </span><span class="s3">[]</span>
+
+
+<span class="s0"># ==========================</span>
+<span class="s0"># Phase 3：整合摘要</span>
+<span class="s0"># ==========================</span>
+<span class="s0"># ==========================</span>
+<span class="s0"># Phase 3：整合摘要 (保持不變)</span>
+<span class="s0"># ==========================</span>
+<span class="s2">def </span><span class="s1">summarize_event</span><span class="s3">(</span><span class="s1">event</span><span class="s3">, </span><span class="s1">articles</span><span class="s3">):</span>
+    <span class="s1">print</span><span class="s3">(</span><span class="s4">f&quot;🧠 [Phase 3] 摘要整合：</span><span class="s2">{</span><span class="s1">event</span><span class="s2">}</span><span class="s4">&quot;</span><span class="s3">)</span>
+
+    <span class="s2">if not </span><span class="s1">articles</span><span class="s3">:</span>
+        <span class="s2">return </span><span class="s4">f&quot;⚠️ 警告：未找到關於「</span><span class="s2">{</span><span class="s1">event</span><span class="s2">}</span><span class="s4">」的有效新聞文章，無法生成摘要。&quot;</span>
+
+    <span class="s1">context </span><span class="s3">= </span><span class="s4">&quot;&quot;</span>
+    <span class="s2">for </span><span class="s1">art </span><span class="s2">in </span><span class="s1">articles</span><span class="s3">:</span>
+        <span class="s1">content_text </span><span class="s3">= </span><span class="s1">art</span><span class="s3">.</span><span class="s1">get</span><span class="s3">(</span><span class="s4">'content'</span><span class="s3">) </span><span class="s2">or </span><span class="s4">&quot;&quot;</span>
+        <span class="s1">source_text </span><span class="s3">= </span><span class="s1">art</span><span class="s3">.</span><span class="s1">get</span><span class="s3">(</span><span class="s4">'source'</span><span class="s3">, </span><span class="s4">'未知來源'</span><span class="s3">)</span>
+        <span class="s1">title_text </span><span class="s3">= </span><span class="s1">art</span><span class="s3">.</span><span class="s1">get</span><span class="s3">(</span><span class="s4">'title'</span><span class="s3">, </span><span class="s4">'無標題'</span><span class="s3">)</span>
+
+        <span class="s0"># 只擷取前 750 字元</span>
+        <span class="s1">context </span><span class="s3">+= </span><span class="s4">f&quot;來源: </span><span class="s2">{</span><span class="s1">source_text</span><span class="s2">}\n</span><span class="s4">標題: </span><span class="s2">{</span><span class="s1">title_text</span><span class="s2">}\n</span><span class="s4">內容: </span><span class="s2">{</span><span class="s1">content_text</span><span class="s3">[:</span><span class="s5">750</span><span class="s3">]</span><span class="s2">}\n\n</span><span class="s4">&quot;</span>
+
+    <span class="s1">prompt </span><span class="s3">= </span><span class="s4">f&quot;&quot;&quot;</span>
+    <span class="s4">以下是關於「</span><span class="s2">{</span><span class="s1">event</span><span class="s2">}</span><span class="s4">」的多家新聞報導。</span>
+    <span class="s4">請幫我綜合這些內容，撰寫約 500 字的客觀摘要，</span>
+    <span class="s4">需包含主要事實與各媒體的不同觀點。</span>
+
+    <span class="s4">--- 報導資料 ---</span>
+    <span class="s2">{</span><span class="s1">context</span><span class="s2">}</span>
+    <span class="s4">--- 結束 ---</span>
+    <span class="s4">&quot;&quot;&quot;</span>
+    <span class="s1">response </span><span class="s3">= </span><span class="s1">gemini_model</span><span class="s3">.</span><span class="s1">generate_content</span><span class="s3">(</span><span class="s1">prompt</span><span class="s3">)</span>
+    <span class="s2">return </span><span class="s1">response</span><span class="s3">.</span><span class="s1">text</span>
+
+
+<span class="s0"># ==========================</span>
+<span class="s0"># Phase 4：呈現</span>
+<span class="s0"># ==========================</span>
+<span class="s2">def </span><span class="s1">generate_news_report</span><span class="s3">():</span>
+    <span class="s1">main_events </span><span class="s3">= </span><span class="s1">get_main_events</span><span class="s3">()</span>
+    <span class="s1">report </span><span class="s3">= {}</span>
+
+    <span class="s2">for </span><span class="s1">event </span><span class="s2">in </span><span class="s1">main_events</span><span class="s3">[:</span><span class="s5">5</span><span class="s3">]:  </span><span class="s0"># 可調整要摘要的事件數量</span>
+        <span class="s1">articles </span><span class="s3">= </span><span class="s1">get_event_articles</span><span class="s3">(</span><span class="s1">event</span><span class="s3">)</span>
+        <span class="s2">if not </span><span class="s1">articles</span><span class="s3">:</span>
+            <span class="s2">continue</span>
+        <span class="s1">summary </span><span class="s3">= </span><span class="s1">summarize_event</span><span class="s3">(</span><span class="s1">event</span><span class="s3">, </span><span class="s1">articles</span><span class="s3">)</span>
+        <span class="s1">report</span><span class="s3">[</span><span class="s1">event</span><span class="s3">] = </span><span class="s1">summary</span>
+
+    <span class="s1">print</span><span class="s3">(</span><span class="s4">&quot;</span><span class="s2">\n</span><span class="s4">==================== 🗞️ 今日綜合新聞摘要 ====================&quot;</span><span class="s3">)</span>
+    <span class="s2">for </span><span class="s1">topic</span><span class="s3">, </span><span class="s1">summary </span><span class="s2">in </span><span class="s1">report</span><span class="s3">.</span><span class="s1">items</span><span class="s3">():</span>
+        <span class="s1">print</span><span class="s3">(</span><span class="s4">f&quot;</span><span class="s2">\n</span><span class="s4">🟦 </span><span class="s2">{</span><span class="s1">topic</span><span class="s2">}\n{</span><span class="s1">summary</span><span class="s2">}\n{</span><span class="s4">'-' </span><span class="s3">* </span><span class="s5">60</span><span class="s2">}</span><span class="s4">&quot;</span><span class="s3">)</span>
+    <span class="s1">print</span><span class="s3">(</span><span class="s4">&quot;==============================================================&quot;</span><span class="s3">)</span>
+
+
+<span class="s0"># ==========================</span>
+<span class="s0"># 主程式入口</span>
+<span class="s0"># ==========================</span>
+<span class="s2">if </span><span class="s1">__name__ </span><span class="s3">== </span><span class="s4">&quot;__main__&quot;</span><span class="s3">:</span>
+    <span class="s1">generate_news_report</span><span class="s3">()</span></pre>
+</body>
+</html>
