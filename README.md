@@ -1,35 +1,41 @@
-# **📰 自動新聞整合系統 (Automatic News Integration System)**
+📰 AI News Aggregator & Analyzer (AI 新聞輿情分析平台)
+這是一個基於 Python 的即時新聞聚合與分析工具。它結合了 Google News RSS、Tavily Search API 以及 Google Gemini Pro/Flash 模型，能自動抓取當日熱門議題，並透過 AI 生成深度摘要，分析事件的核心衝突與正反方觀點。
 
-## **專案簡介**
+✨ 主要功能
+⚡ 即時熱點聚合：自動抓取 Google News (台灣區) 的 RSS Feed，獲取當下最熱門的新聞議題。
 
-本專案是一個基於 LLM 的自動化新聞報告生成系統。它旨在解決資訊爆炸時代中，使用者難以快速掌握每日新聞重點的問題。系統會從多個來源搜尋最新的台灣新聞，透過大型語言模型（LLM）提煉出核心事件，並綜合多方報導，生成一份客觀、有引用來源的綜合報告。
+🔍 深度內容檢索：利用 Tavily API 針對特定議題進行網路搜尋，抓取多篇相關報導的完整內文，不只看標題。
 
-* **核心價值:** 大幅縮短新聞篩選與閱讀時間，提供多角度的事件全貌。  
-* **目標受眾:** 內容編輯者、媒體分析師、或任何希望高效獲取台灣每日新聞摘要的一般使用者。
+🤖 AI 輿情分析：
 
-## **系統架構與技術棧**
+綜合摘要：過濾雜訊，生成 150 字內的客觀懶人包。
 
-| 流程階段 | 使用工具 | 核心功能 |
-| :---- | :---- | :---- |
-| **Phase 0 & 1 (標題與廣泛搜尋)** | Google Custom Search API / Tavily Search API | 獲取初始標題並進行初步內容探索。 |
-| **Phase 2 & 3 (事件提取與摘要)** | **Google Gemini 2.5 Flash** | 提煉 3-5 個核心事件；綜合原始內容生成約 500 字的客觀摘要。 |
-| **Phase 4 (輸出)** | Python datetime / I/O | 將最終報告格式化為 Markdown 檔案，並包含完整的來源連結。 |
+核心衝突識別：AI 自動判斷該事件最大的爭議點或矛盾點。
 
-## **快速入門 (Setup)**
+多元觀點對照：自動歸納「支持方 vs 反對方」或「樂觀派 vs 悲觀派」的論述，並附上媒體來源。
 
-### **1\. 安裝依賴套件**
+🖥️ 互動式 Web UI：使用 Gradio 建置的簡潔介面，點擊左側議題即可即時生成右側報告。
 
-請確保您的 Python 環境已安裝所有必要的函式庫：  
-pip install python-dotenv tavily google-genai google-api-python-client
+🛡️ 穩定的輸出格式：採用 JSON Schema 強制 Gemini 輸出結構化資料，並包含自動修復機制，防止 AI 生成內容截斷。
 
-### **2\. 設定環境變數**
+🛠️ 技術架構
+UI 介面: Gradio
 
-您需要從各個服務商獲取 API Keys，並在專案根目錄下創建一個名為 **.env** 的檔案，填入您的金鑰和 ID：  
-TAVILY\_API\_KEY="您的 Tavily API Key"  
-GOOGLE\_API\_KEY="您的 Google API Key (用於 Gemini 和 CSE)"  
-GOOGLE\_CSE\_ID="您的 Google Custom Search Engine ID"
+LLM 模型: Google Gemini (gemini-2.5-flash 或 1.5-flash)
 
+搜尋引擎: Tavily Search API (用於 RAG 檢索)
 
-## **貢獻**
+資料來源: Feedparser (RSS)
 
-歡迎任何形式的貢獻！如果您對程式碼有任何建議或發現 Bug，請隨時提交 Pull Request 或開啟 Issue。
+爬蟲輔助: BeautifulSoup4, Requests
+
+🚀 快速開始
+1. 前置需求
+
+請確保你已安裝 Python 3.10 或以上版本，並且擁有以下 API Key：
+
+Google AI Studio Key: 用於存取 Gemini 模型 ([取得連結](https://aistudio.google.com/usage?timeRange=last-28-days&project=w6rag-475210))
+
+Tavily API Key: 用於搜尋新聞內文 ([取得連結](https://www.tavily.com))
+
+2. 安裝專案
