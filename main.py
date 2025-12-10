@@ -170,7 +170,7 @@ def generate_analysis(topic_title, articles):
     請以 JSON 格式輸出新聞分析。
     
     【重要規則】
-    1. 絕對禁止重複語句：summary 必須精簡，若發現自己在重複同樣的詞彙 (如"共創"、"未來")，請立刻停止。
+    1. 絕對禁止重複語句：summary 必須精簡，若發現自己在重複同樣的詞彙，請立刻停止。
     2. sources 格式：在 perspectives 中，來源必須包含網址，請使用 Markdown 格式： `[媒體名稱](URL)`。
     3. 若新聞內容只有單方說法 (缺乏對立面)，請在 perspectives 中只列出該方觀點，不要硬湊反對方。
     
@@ -271,9 +271,9 @@ def create_ui():
     if not rss_topics:
         rss_topics = [{"title": "暫無新聞資料", "links": []}]
 
-    with gr.Blocks(title="AI 新聞聚合器") as demo:
+    with gr.Blocks(title="AI 新聞助手") as demo:
 
-        gr.Markdown(f"## 📰 今日新聞聚合 ({date.today().isoformat()})")
+        gr.Markdown(f"## 📰 今日新聞 ({date.today().isoformat()})")
         gr.Markdown("點擊左側議題，右側將即時生成 AI 分析摘要。")
 
         with gr.Row():
