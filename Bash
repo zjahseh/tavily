@@ -1,0 +1,11 @@
+# Clone 此專案
+git clone https://github.com/your-username/ai-news-aggregator.git
+cd ai-news-aggregator
+
+# 建立虛擬環境 (建議)
+python -m venv .venv
+source .venv/bin/activate  # Mac/Linux
+# .venv\Scripts\activate   # Windows
+
+# 安裝依賴套件
+pip install -r requirements.txt
