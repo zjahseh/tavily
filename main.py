@@ -14,6 +14,7 @@ import typing_extensions as typing
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # ---------- Logging ----------
+# ---------- Logging ----------
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 # ==========================
